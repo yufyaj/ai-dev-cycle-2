@@ -1,0 +1,162 @@
+name: Issueize Requirement
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Requirement ID (e.g., 0001)"
+        required: true
+        type: string
+      assignee:
+        description: "Assignee username (optional)"
+        required: false
+        type: string
+      labels:
+        description: "Comma-separated extra labels (optional)"
+        required: false
+        type: string
+      dry_run:
+        description: "Do not create/update issues, just log"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issueize-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  issueize:
+    name: Create parent/sub issues from templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Collect templates
+        id: paths
+        shell: bash
+        env:
+          RID: ${{ inputs.project_id }}
+        run: |
+          set -euo pipefail
+          base="requirements/${RID}/issues"
+          if [ ! -f "$base/parent.md" ]; then
+            echo "::error::Missing parent template: $base/parent.md"; exit 1;
+          fi
+          echo "parent=$base/parent.md" >> $GITHUB_OUTPUT
+          if compgen -G "$base/sub/*.md" > /dev/null; then
+            printf "subs=%s\n" "$(ls -1 $base/sub/*.md | paste -sd, -)" >> $GITHUB_OUTPUT
+          else
+            printf "subs=\n" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issues
+        if: ${{ !inputs.dry_run }}
+        id: create
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const rid = process.env.INPUT_PROJECT_ID;
+            const extraLabelsRaw = process.env.INPUT_LABELS || '';
+            const assignee = process.env.INPUT_ASSIGNEE || '';
+            const parentPath = process.env.PARENT_PATH;
+            const subsCsv = process.env.SUBS_CSV;
+
+            function parseTemplate(filePath){
+              const raw = fs.readFileSync(filePath, 'utf8');
+              const lines = raw.split(/\r?\n/);
+              let title = '';
+              let startBody = 0;
+              for (let i=0; i<lines.length; i++){
+                if (lines[i].startsWith('# ')) { title = lines[i].replace(/^#\s+/, '').trim(); startBody = i+1; break; }
+              }
+              if (!title) {
+                for (let i=0; i<lines.length; i++) { if (lines[i].trim()) { title = lines[i].trim(); startBody = i+1; break; } }
+              }
+              const body = lines.slice(startBody).join('\n');
+              return { title, body };
+            }
+
+            async function findIssueByTitleAndReq(title, rid, type) {
+              const reqLabel = `req:${rid}`;
+              const typeLabel = type;
+              let page = 1; const per_page = 100; let found = null;
+              while(true){
+                const { data } = await github.rest.issues.listForRepo({ owner, repo, labels: `${reqLabel},${typeLabel}`, state: 'all', per_page, page });
+                if (!data.length) break;
+                for (const it of data){ if (it.title === title) { found = it; break; } }
+                if (found) break; page++;
+              }
+              return found;
+            }
+
+            async function ensureLabels(labels){
+              for (const name of labels){
+                try { await github.rest.issues.getLabel({ owner, repo, name }); }
+                catch {
+                  await github.rest.issues.createLabel({ owner, repo, name, color: 'D4C5F9' }).catch(()=>{});
+                }
+              }
+            }
+
+            const parent = parseTemplate(parentPath);
+            const subPaths = subsCsv ? subsCsv.split(',').filter(Boolean) : [];
+            const baseLabels = [ `req:${rid}` ];
+            const extraLabels = extraLabelsRaw.split(',').map(s=>s.trim()).filter(Boolean);
+            const parentLabels = [...baseLabels, 'type:parent', ...extraLabels];
+            const subLabelsBase = [...baseLabels, 'type:sub'];
+            await ensureLabels([...new Set([...parentLabels, ...subLabelsBase])]);
+
+            let parentIssue = await findIssueByTitleAndReq(parent.title, rid, 'type:parent');
+            if (!parentIssue){
+              parentIssue = (await github.rest.issues.create({ owner, repo, title: parent.title, body: parent.body, labels: parentLabels, assignees: assignee ? [assignee] : undefined })).data;
+            }
+
+            const createdSubs = [];
+            for (const subPath of subPaths){
+              const sub = parseTemplate(subPath);
+              let subIssue = await findIssueByTitleAndReq(sub.title, rid, 'type:sub');
+              if (!subIssue){
+                subIssue = (await github.rest.issues.create({ owner, repo, title: sub.title, body: sub.body, labels: subLabelsBase, assignees: assignee ? [assignee] : undefined })).data;
+              }
+              createdSubs.push(subIssue.number);
+            }
+
+            if (createdSubs.length){
+              const existing = parentIssue.body || '';
+              const newLines = [];
+              for (const n of createdSubs){
+                const line = `- [ ] #${n}`;
+                if (!existing.includes(line)) newLines.push(line);
+              }
+              if (newLines.length){
+                const sep = existing.match(/\n\s*##\s*Tasks\s*\n/) ? '' : '\n\n## Tasks\n';
+                const body = existing + sep + newLines.join('\n') + '\n';
+                await github.rest.issues.update({ owner, repo, issue_number: parentIssue.number, body });
+              }
+            }
+
+            core.setOutput('parent_issue_number', parentIssue.number.toString());
+            core.setOutput('sub_issue_numbers', createdSubs.join(','));
+          env:
+            INPUT_PROJECT_ID: ${{ inputs.project_id }}
+            INPUT_ASSIGNEE: ${{ inputs.assignee }}
+            INPUT_LABELS: ${{ inputs.labels }}
+            PARENT_PATH: ${{ steps.paths.outputs.parent }}
+            SUBS_CSV: ${{ steps.paths.outputs.subs }}
+
+      - name: Dry-run preview
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "[Dry-run] Would process parent: ${{ steps.paths.outputs.parent }}"
+          echo "[Dry-run] Would process subs:   ${{ steps.paths.outputs.subs }}"
+

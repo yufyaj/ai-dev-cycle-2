@@ -1,0 +1,57 @@
+name: Claude Manual Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Claude prompt (instructions, task)"
+        required: true
+        type: string
+      track_progress:
+        description: "Enable progress tracking comments"
+        required: false
+        default: false
+        type: boolean
+      max_turns:
+        description: "Max conversation turns"
+        required: false
+        default: "6"
+        type: string
+      allowed_tools:
+        description: "Comma-separated allowed tools"
+        required: false
+        default: ""
+        type: string
+      model:
+        description: "Optional model override (e.g., claude-3-7-sonnet)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: claude-manual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    name: Claude automation run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Run Claude Code Action (manual)
+        uses: anthropics/claude-code-action@d8f249ecdfa45f54899e00f42672e02eb40933e9 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: ${{ inputs.track_progress }}
+          prompt: ${{ inputs.prompt }}
+          claude_args: |
+            --max-turns ${{ inputs.max_turns || vars.CLAUDE_MAX_TURNS || '6' }}
+            --allowedTools "${{ inputs.allowed_tools != '' && inputs.allowed_tools || vars.CLAUDE_ALLOWED_TOOLS }}"
+            ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
+

@@ -1,0 +1,85 @@
+name: Auto Draft PR
+
+on:
+  push:
+    branches-ignore:
+      - 'dependabot/**'
+      - 'renovate/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: autodraft-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  create-draft:
+    name: Create Draft PR if missing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine eligibility and extract ID
+        id: meta
+        shell: bash
+        env:
+          BRANCH_PREFIXES: ${{ vars.BRANCH_PREFIXES }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF#refs/heads/}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "eligible=false" >> $GITHUB_OUTPUT; exit 0;
+          fi
+          prefixes="${BRANCH_PREFIXES:-feat/req-,fix/req-}"
+          eligible=false
+          IFS=',' read -ra PFX <<< "$prefixes"
+          for p in "${PFX[@]}"; do
+            [[ -n "$p" ]] || continue
+            if [[ "$ref" == "$p"* ]]; then eligible=true; break; fi
+          done
+          rid=""
+          if $eligible; then
+            if [[ "$ref" =~ req-([0-9]+) ]]; then rid="${BASH_REMATCH[1]}"; fi
+          fi
+          echo "ref=$ref" >> $GITHUB_OUTPUT
+          echo "eligible=$eligible" >> $GITHUB_OUTPUT
+          echo "rid=$rid" >> $GITHUB_OUTPUT
+
+      - name: Stop if not eligible
+        if: ${{ steps.meta.outputs.eligible != 'true' }}
+        run: echo "Branch not eligible for auto draft PR."
+
+      - name: Create or reuse draft PR
+        if: ${{ steps.meta.outputs.eligible == 'true' }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const head = core.getInput('head');
+            const rid = core.getInput('rid');
+            const { data: prs } = await github.rest.pulls.list({ owner, repo, state: 'open', head: `${owner}:${head}` });
+            if (prs.length) { core.info(`PR exists: #${prs[0].number}`); return; }
+            const { data: r } = await github.rest.repos.get({ owner, repo });
+            const base = r.default_branch;
+            let parentIssue = null;
+            if (rid) {
+              let page=1; const per_page=50;
+              while(true){
+                const { data } = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: `req:${rid},type:parent`, per_page, page });
+                if (!data.length) break;
+                parentIssue = data[0]; if (parentIssue) break; page++;
+              }
+            }
+            const rel = parentIssue ? `Related to #${parentIssue.number}` : (rid ? `Related requirement: req:${rid}` : '');
+            const title = `Draft: ${head}`;
+            const body = `${rel}`.trim();
+            const { data: pr } = await github.rest.pulls.create({ owner, repo, head, base, title, body, draft: true });
+            core.info(`Created PR #${pr.number}`);
+            if (rid) {
+              try { await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels: [`req:${rid}`] }); } catch {}
+            }
+          head: ${{ steps.meta.outputs.ref }}
+          rid: ${{ steps.meta.outputs.rid }}
+

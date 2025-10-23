@@ -1,0 +1,124 @@
+name: PR CI & Security
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: pr-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      fe: ${{ steps.filter.outputs.fe }}
+      be: ${{ steps.filter.outputs.be }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Paths filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            fe:
+              - '${{ vars.PATHS_FE || "apps/web/**" }}'
+            be:
+              - '${{ vars.PATHS_BE || "apps/api/**" }}'
+            docker:
+              - '**/Dockerfile'
+              - 'Dockerfile'
+
+  frontend-tests:
+    name: Frontend tests
+    needs: [changes]
+    if: ${{ needs.changes.outputs.fe == 'true' }}
+    uses: ./.github/workflows/ci-frontend.yml
+    secrets: inherit
+    with:
+      workdir: ${{ vars.FE_WORKDIR || 'apps/web' }}
+      pkg_manager: ${{ vars.PKG_MANAGER || 'pnpm' }}
+      install_cmd: ${{ vars.FE_INSTALL_CMD || 'pnpm i --frozen-lockfile' }}
+      test_cmd: ${{ vars.FE_TEST_CMD || 'pnpm test -- --ci' }}
+      node_version: ${{ vars.NODE_VERSION || '20' }}
+
+  backend-tests:
+    name: Backend tests
+    needs: [changes]
+    if: ${{ needs.changes.outputs.be == 'true' }}
+    uses: ./.github/workflows/ci-backend.yml
+    secrets: inherit
+    with:
+      language: ${{ vars.BE_LANGUAGE || 'node' }}
+      version: ${{ vars.BE_VERSION || '20' }}
+      workdir: ${{ vars.BE_WORKDIR || 'apps/api' }}
+      install_cmd: ${{ vars.BE_INSTALL_CMD || 'pnpm i --frozen-lockfile' }}
+      test_cmd: ${{ vars.BE_TEST_CMD || 'pnpm test -- --ci' }}
+
+  semgrep:
+    name: Semgrep (SAST)
+    needs: [frontend-tests, backend-tests, changes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
+        with:
+          config: ${{ vars.SEMGREP_POLICY || 'p/default,p/owasp-top-ten' }}
+          generateSarif: true
+          publishSarif: true
+          semgrep_args: --severity ${{ vars.SECURITY_SEVERITY_THRESHOLD || 'high' }}
+
+  gitleaks:
+    name: Gitleaks (Secrets)
+    needs: [frontend-tests, backend-tests, changes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        with:
+          redaction: true
+
+  trivy:
+    name: Trivy (Container/IaC)
+    needs: [frontend-tests, backend-tests, changes]
+    if: ${{ needs.changes.outputs.docker == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Run Trivy FS scan
+        uses: aquasecurity/trivy-action@bceef37a45815d6c5cfea1861a414ec7dbc00242 # v0
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: ${{ vars.TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+
+  codeql:
+    name: CodeQL (optional)
+    if: ${{ vars.CODEQL_ENABLE == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@825303e8b1cac72c418fc564ba550b32b2741b90 # v4
+        with:
+          languages: javascript,python,java
+          build-mode: autobuild
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@825303e8b1cac72c418fc564ba550b32b2741b90 # v4
+

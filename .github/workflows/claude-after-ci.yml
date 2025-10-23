@@ -1,0 +1,70 @@
+name: Claude Review After CI
+
+on:
+  workflow_run:
+    workflows: ["PR CI & Security"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: claude-after-ci-${{ github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review when CI succeeds
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract PR info
+        id: pr
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const wr = context.payload.workflow_run;
+            if (!wr.pull_requests || wr.pull_requests.length === 0) {
+              core.setOutput('skip', 'true');
+              return;
+            }
+            const number = wr.pull_requests[0].number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.setOutput('skip', 'true');
+              return;
+            }
+            core.setOutput('number', String(number));
+            core.setOutput('skip', 'false');
+
+      - name: Checkout
+        if: ${{ steps.pr.outputs.skip != 'true' }}
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Claude Code Review
+        if: ${{ steps.pr.outputs.skip != 'true' }}
+        uses: anthropics/claude-code-action@d8f249ecdfa45f54899e00f42672e02eb40933e9 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: false
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.pr.outputs.number }}
+
+            CI is green. Provide a thorough code review focusing on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Security implications (OWASP)
+            - Performance considerations
+
+            Use inline comments for specific issues.
+          claude_args: |
+            --max-turns ${{ vars.CLAUDE_MAX_TURNS || '6' }}
+            --allowedTools "${{ vars.CLAUDE_ALLOWED_TOOLS }}"
+
