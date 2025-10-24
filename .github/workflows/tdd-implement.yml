@@ -1,0 +1,83 @@
+name: TDD駆動開発ワークフロー
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  tdd-implement:
+    # tdd-implement:frontend または tdd-implement:backend ラベルが付与された時のみ実行
+    if: |
+      github.event.label.name == 'tdd-implement:frontend' ||
+      github.event.label.name == 'tdd-implement:backend'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: パッケージ名を抽出
+        id: extract-package
+        run: |
+          LABEL_NAME="${{ github.event.label.name }}"
+          PACKAGE=$(echo $LABEL_NAME | cut -d':' -f2)
+          echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
+          echo "対象パッケージ: ${PACKAGE}"
+
+      - name: TDD駆動開発の実行
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            ## タスク
+            Issue #${{ github.event.issue.number }} の内容を確認し、TDD（Test-Driven Development）で実装してください。
+
+            ## 🎯 対象パッケージ
+            **${{ steps.extract-package.outputs.package }}** パッケージ
+
+            **重要**: すべての作業は `packages/${{ steps.extract-package.outputs.package }}/` ディレクトリ内で行ってください。
+
+            ## TDDサイクルの遵守
+            必ず以下の順序で実装を進めてください：
+
+            ### 1. Red（失敗するテストを書く）
+            - Issue要件を満たすテストケースを作成
+            - エッジケースも含めて網羅的にテストを作成
+            - この時点でテストは失敗することを確認
+            - テストファイルは `packages/${{ steps.extract-package.outputs.package }}/` 配下に配置
+
+            ### 2. Green（テストを通す最小限の実装）
+            - テストを通すための最小限のコードを実装
+            - すべてのテストが通ることを確認
+            - 実装は `packages/${{ steps.extract-package.outputs.package }}/` 内に限定
+
+            ### 3. Refactor（リファクタリング）
+            - コードの可読性と保守性を向上
+            - 重複を排除
+            - CLAUDE.mdの指針に従う
+            - 他のパッケージへの影響がないことを確認
+
+            ## 完了条件
+            - ✅ すべてのテストが通ること
+            - ✅ コードカバレッジが適切であること
+            - ✅ CLAUDE.mdのコーディング規約に準拠していること
+            - ✅ `packages/${{ steps.extract-package.outputs.package }}/` 内のみを変更していること
+
+            ## 成果物
+            実装完了後、以下を実行してください：
+
+            1. **ブランチ作成**: `feature/${{ steps.extract-package.outputs.package }}/issue-${{ github.event.issue.number }}`
+            2. **変更をコミット**: "feat(${{ steps.extract-package.outputs.package }}): Issue #${{ github.event.issue.number }} をTDDで実装"
+            3. **ドラフトPR作成**:
+               - タイトル: "[${{ steps.extract-package.outputs.package }}] TDD実装: ${{ github.event.issue.title }}"
+               - 本文に以下を含める:
+                 - 📦 対象パッケージ: `${{ steps.extract-package.outputs.package }}`
+                 - 📝 実装内容の概要
+                 - 🔄 TDDサイクルの各ステップで行った内容
+                 - 📊 テストカバレッジの情報
+                 - 📂 変更されたファイルのリスト
+                 - `Closes #${{ github.event.issue.number }}`
+                 - `/cc @${{ github.event.issue.user.login }}`
