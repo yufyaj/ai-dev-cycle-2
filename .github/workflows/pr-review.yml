@@ -65,6 +65,9 @@ jobs:
     if: github.event.pull_request.draft == true
 
     steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
       - name: 対象パッケージを判別
         id: detect-package
         run: |
@@ -82,6 +85,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--allowedTools Read,Glob,Grep"
           prompt: |
             ## タスク
             このプルリクエスト (#${{ github.event.pull_request.number }}) のコードレビューを実施してください。
