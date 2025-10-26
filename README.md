@@ -108,17 +108,15 @@ gh label create "complexity:high" --description "複雑度: 高" --color "F9D0C4
 project-codeguard/rules から最新のセキュリティルールをダウンロードします：
 
 ```bash
-# 最新リリースを確認
-curl -s https://api.github.com/repos/project-codeguard/rules/releases/latest | grep "tag_name"
-
-# Claude Code用のルールをダウンロード（v1.0.0の例）
 cd ai-docs/security/codeguard-rules/
 
-curl -L -o claude-code-rules.md \
-  https://github.com/project-codeguard/rules/releases/download/v1.0.0/claude-code-rules.md
+# リポジトリをクローンしてrulesディレクトリのみをコピー
+git clone --depth 1 https://github.com/project-codeguard/rules.git temp-codeguard
+cp -r temp-codeguard/rules/* .
+rm -rf temp-codeguard
 
-# 配置を確認
-ls -la claude-code-rules.md
+# 配置を確認（25個程度のルールファイルが表示される）
+ls -la *.md
 ```
 
 **CodeGuardは8つのセキュリティドメインをカバーしています:**

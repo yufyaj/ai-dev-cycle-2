@@ -22,31 +22,30 @@ CodeGuardは、AI コーディングエージェント向けのセキュリテ�
 最新のルールをダウンロードします：
 
 ```bash
-# 最新リリースを確認
-curl -s https://api.github.com/repos/project-codeguard/rules/releases/latest | grep "tag_name"
-
-# ルールをダウンロード（v1.0.0の例）
 cd ai-docs/security/codeguard-rules/
 
-# Claude Code用のルールをダウンロード
-curl -L -o claude-code-rules.md \
-  https://github.com/project-codeguard/rules/releases/download/v1.0.0/claude-code-rules.md
+# リポジトリをクローンしてrulesディレクトリのみをコピー
+git clone --depth 1 https://github.com/project-codeguard/rules.git temp-codeguard
+cp -r temp-codeguard/rules/* .
+rm -rf temp-codeguard
 
-# または、リポジトリ全体をクローン
-git clone https://github.com/project-codeguard/rules.git temp-rules
-mv temp-rules/rules/* .
-rm -rf temp-rules
+# 配置を確認（25個程度のルールファイルが表示される）
+ls -la *.md
 ```
 
 ### 2. ルールの配置
 
-ダウンロードしたルールをこのディレクトリに配置してください：
+ダウンロードしたルールがこのディレクトリに配置されます：
 
 ```
 ai-docs/security/codeguard-rules/
 ├── README.md (このファイル)
-├── claude-code-rules.md (Claude Code用ルール)
-└── (その他のルールファイル)
+├── codeguard-0-authentication-mfa.md
+├── codeguard-0-authorization-access-control.md
+├── codeguard-0-input-validation-injection.md
+├── codeguard-1-crypto-algorithms.md
+├── codeguard-1-hardcoded-credentials.md
+└── （その他のルールファイル、合計25個程度）
 ```
 
 ### 3. 動作確認
@@ -86,17 +85,16 @@ PR自動レビューワークフローにより、CodeGuardのルールに基づ
 定期的にCodeGuardのルールを更新することを推奨します：
 
 ```bash
-# 最新バージョンを確認
 cd ai-docs/security/codeguard-rules/
-curl -s https://api.github.com/repos/project-codeguard/rules/releases/latest
 
-# 新しいバージョンをダウンロード
-curl -L -o claude-code-rules.md \
-  https://github.com/project-codeguard/rules/releases/download/vX.X.X/claude-code-rules.md
+# 最新のルールをダウンロード（既存ファイルを上書き）
+git clone --depth 1 https://github.com/project-codeguard/rules.git temp-codeguard
+cp -r temp-codeguard/rules/* .
+rm -rf temp-codeguard
 
 # 変更をコミット
 git add .
-git commit -m "⬆️ chore(security): CodeGuardルールをvX.X.Xに更新"
+git commit -m "⬆️ chore(security): CodeGuardルールを最新版に更新"
 git push
 ```
 
@@ -134,7 +132,8 @@ CLAUDE.mdにカスタムルールへの参照を追加してください。
 
 1. ルールファイルが正しく配置されているか確認
    ```bash
-   ls -la ai-docs/security/codeguard-rules/claude-code-rules.md
+   ls -la ai-docs/security/codeguard-rules/*.md
+   # 25個程度のルールファイルが表示されるはず
    ```
 
 2. CLAUDE.mdに参照が記載されているか確認
