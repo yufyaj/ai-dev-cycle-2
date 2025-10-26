@@ -46,6 +46,140 @@ ai-dev-cycle-2/
 - 🎯 **自動ドラフト解除**: レビュー承認後、自動でレビュー可能状態に
 - 💬 **対話型要件定義**: Claude Codeと対話しながら要件定義書を作成
 
+## セットアップ
+
+### 1. Claude Code GitHub Appのインストール
+
+ターミナルで以下のコマンドを実行：
+
+```bash
+claude /install-github-app
+```
+
+ガイドに従って以下を設定：
+- GitHub Appのインストール
+- リポジトリへのアクセス許可
+- 必要なシークレットの自動設定
+
+### 2. 必要なラベルの作成
+
+GitHub CLIで必要なラベルを一括作成します：
+
+```bash
+# GitHub CLIでリポジトリにログイン（初回のみ）
+gh auth login
+
+# 必須ラベル
+gh label create "epic" --description "親Issue（Epic）" --color "7057ff"
+gh label create "frontend" --description "フロントエンドタスク（分類用）" --color "0E8A16"
+gh label create "backend" --description "バックエンドタスク（分類用）" --color "1D76DB"
+gh label create "tdd-implement:frontend" --description "フロントエンド実装トリガー" --color "0E8A16"
+gh label create "tdd-implement:backend" --description "バックエンド実装トリガー" --color "1D76DB"
+
+# 推奨ラベル（優先度）
+gh label create "priority:high" --description "優先度: 高" --color "D93F0B"
+gh label create "priority:medium" --description "優先度: 中" --color "FBCA04"
+gh label create "priority:low" --description "優先度: 低" --color "0E8A16"
+
+# 推奨ラベル（複雑度）
+gh label create "complexity:low" --description "複雑度: 低" --color "C2E0C6"
+gh label create "complexity:medium" --description "複雑度: 中" --color "FEF2C0"
+gh label create "complexity:high" --description "複雑度: 高" --color "F9D0C4"
+```
+
+#### ラベル一覧
+
+| ラベル | 用途 | ワークフロー起動 | 色 |
+|--------|------|-----------------|-----|
+| `epic` | 親Issue（Epic） | しない | 紫 |
+| `frontend` | フロントエンド分類用 | しない | 緑 |
+| `backend` | バックエンド分類用 | しない | 青 |
+| `tdd-implement:frontend` | フロントエンド実装トリガー | **する** | 緑 |
+| `tdd-implement:backend` | バックエンド実装トリガー | **する** | 青 |
+| `priority:high` | 優先度：高 | しない | 赤 |
+| `priority:medium` | 優先度：中 | しない | 黄 |
+| `priority:low` | 優先度：低 | しない | 緑 |
+| `complexity:low` | 複雑度：低 | しない | 淡緑 |
+| `complexity:medium` | 複雑度：中 | しない | 淡黄 |
+| `complexity:high` | 複雑度：高 | しない | 淡赤 |
+
+### 3. セキュリティルールのダウンロード
+
+project-codeguard/rules から最新のセキュリティルールをダウンロードします：
+
+```bash
+# 最新リリースを確認
+curl -s https://api.github.com/repos/project-codeguard/rules/releases/latest | grep "tag_name"
+
+# Claude Code用のルールをダウンロード（v1.0.0の例）
+cd ai-docs/security/codeguard-rules/
+
+curl -L -o claude-code-rules.md \
+  https://github.com/project-codeguard/rules/releases/download/v1.0.0/claude-code-rules.md
+
+# 配置を確認
+ls -la claude-code-rules.md
+```
+
+**CodeGuardは8つのセキュリティドメインをカバーしています:**
+1. 暗号化（安全なアルゴリズムと鍵管理）
+2. 入力検証（SQLインジェクション、XSS対策）
+3. 認証（MFA とセキュアなセッション管理）
+4. 認可（アクセス制御と IDOR 防止）
+5. サプライチェーン（依存性セキュリティ）
+6. クラウドセキュリティ（IaC と Kubernetes 対策）
+7. プラットフォームセキュリティ（モバイルと API セキュリティ）
+8. データ保護（暗号化とセキュアストレージ）
+
+詳細は `ai-docs/security/codeguard-rules/README.md` を参照してください。
+
+### 4. シークレットの確認
+
+GitHubリポジトリの **Settings → Secrets and variables → Actions** で以下が設定されていることを確認：
+
+| シークレット名 | 説明 |
+|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code GitHub App認証トークン（自動設定済み） |
+
+### 5. テストコマンドの設定
+
+`.github/workflows/pr-review.yml` を開き、各パッケージに応じてテストコマンドをカスタマイズ：
+
+#### フロントエンド（Node.js）の場合
+
+```yaml
+- name: テスト環境のセットアップ (frontend)
+  if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+  working-directory: packages/frontend
+  run: npm install
+
+- name: テスト実行 (frontend)
+  if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+  working-directory: packages/frontend
+  run: npm test
+```
+
+#### バックエンド（Python）の場合
+
+```yaml
+- name: テスト環境のセットアップ (backend)
+  if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
+  working-directory: packages/backend
+  run: pip install -r requirements.txt
+
+- name: テスト実行 (backend)
+  if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
+  working-directory: packages/backend
+  run: pytest
+```
+
+### 6. 動作確認
+
+1. テスト用のissueを作成
+2. `tdd-implement:frontend` または `tdd-implement:backend` ラベルを付与
+3. GitHub Actionsタブでワークフローが実行されることを確認
+4. 対象パッケージが正しく判別されているかログで確認
+
 ## 要件定義からIssue作成
 
 新機能を実装する前に、Claude Codeと対話しながら要件定義書を作成し、そこから親IssueとSub-Issueを自動生成します。
@@ -276,167 +410,6 @@ ai-docs/requirements/
 - `ai-docs/requirements/_guides/requirements-creation-guide.md` - 対話型要件定義作成ガイド
 - `ai-docs/requirements/_guides/issue-creation-guide.md` - Issue作成ガイドライン
 - `ai-docs/requirements/_guides/template.md` - 要件定義書テンプレート（参考用）
-
-## セットアップ
-
-### 1. Claude Code GitHub Appのインストール
-
-ターミナルで以下のコマンドを実行：
-
-```bash
-claude /install-github-app
-```
-
-ガイドに従って以下を設定：
-- GitHub Appのインストール
-- リポジトリへのアクセス許可
-- 必要なシークレットの自動設定
-
-### 2. 必要なラベルの作成
-
-GitHub CLIで必要なラベルを一括作成します：
-
-```bash
-# GitHub CLIでリポジトリにログイン（初回のみ）
-gh auth login
-
-# 必須ラベル
-gh label create "epic" --description "親Issue（Epic）" --color "7057ff"
-gh label create "frontend" --description "フロントエンドタスク（分類用）" --color "0E8A16"
-gh label create "backend" --description "バックエンドタスク（分類用）" --color "1D76DB"
-gh label create "tdd-implement:frontend" --description "フロントエンド実装トリガー" --color "0E8A16"
-gh label create "tdd-implement:backend" --description "バックエンド実装トリガー" --color "1D76DB"
-
-# 推奨ラベル（優先度）
-gh label create "priority:high" --description "優先度: 高" --color "D93F0B"
-gh label create "priority:medium" --description "優先度: 中" --color "FBCA04"
-gh label create "priority:low" --description "優先度: 低" --color "0E8A16"
-
-# 推奨ラベル（複雑度）
-gh label create "complexity:low" --description "複雑度: 低" --color "C2E0C6"
-gh label create "complexity:medium" --description "複雑度: 中" --color "FEF2C0"
-gh label create "complexity:high" --description "複雑度: 高" --color "F9D0C4"
-```
-
-**既に存在するラベルはスキップされます。**
-
-一括作成スクリプト（オプション）:
-
-```bash
-# スクリプトを作成
-cat > setup-labels.sh << 'EOF'
-#!/bin/bash
-gh label create "epic" --description "親Issue（Epic）" --color "7057ff" 2>/dev/null || true
-gh label create "frontend" --description "フロントエンドタスク（分類用）" --color "0E8A16" 2>/dev/null || true
-gh label create "backend" --description "バックエンドタスク（分類用）" --color "1D76DB" 2>/dev/null || true
-gh label create "tdd-implement:frontend" --description "フロントエンド実装トリガー" --color "0E8A16" 2>/dev/null || true
-gh label create "tdd-implement:backend" --description "バックエンド実装トリガー" --color "1D76DB" 2>/dev/null || true
-gh label create "priority:high" --description "優先度: 高" --color "D93F0B" 2>/dev/null || true
-gh label create "priority:medium" --description "優先度: 中" --color "FBCA04" 2>/dev/null || true
-gh label create "priority:low" --description "優先度: 低" --color "0E8A16" 2>/dev/null || true
-gh label create "complexity:low" --description "複雑度: 低" --color "C2E0C6" 2>/dev/null || true
-gh label create "complexity:medium" --description "複雑度: 中" --color "FEF2C0" 2>/dev/null || true
-gh label create "complexity:high" --description "複雑度: 高" --color "F9D0C4" 2>/dev/null || true
-echo "ラベルの作成が完了しました"
-EOF
-
-# 実行権限を付与して実行
-chmod +x setup-labels.sh
-./setup-labels.sh
-```
-
-#### ラベル一覧
-
-| ラベル | 用途 | ワークフロー起動 | 色 |
-|--------|------|-----------------|-----|
-| `epic` | 親Issue（Epic） | しない | 紫 |
-| `frontend` | フロントエンド分類用 | しない | 緑 |
-| `backend` | バックエンド分類用 | しない | 青 |
-| `tdd-implement:frontend` | フロントエンド実装トリガー | **する** | 緑 |
-| `tdd-implement:backend` | バックエンド実装トリガー | **する** | 青 |
-| `priority:high` | 優先度：高 | しない | 赤 |
-| `priority:medium` | 優先度：中 | しない | 黄 |
-| `priority:low` | 優先度：低 | しない | 緑 |
-| `complexity:low` | 複雑度：低 | しない | 淡緑 |
-| `complexity:medium` | 複雑度：中 | しない | 淡黄 |
-| `complexity:high` | 複雑度：高 | しない | 淡赤 |
-
-### 3. セキュリティルールのダウンロード
-
-project-codeguard/rules から最新のセキュリティルールをダウンロードします：
-
-```bash
-# 最新リリースを確認
-curl -s https://api.github.com/repos/project-codeguard/rules/releases/latest | grep "tag_name"
-
-# Claude Code用のルールをダウンロード（v1.0.0の例）
-cd ai-docs/security/codeguard-rules/
-
-curl -L -o claude-code-rules.md \
-  https://github.com/project-codeguard/rules/releases/download/v1.0.0/claude-code-rules.md
-
-# 配置を確認
-ls -la claude-code-rules.md
-```
-
-**CodeGuardは8つのセキュリティドメインをカバーしています:**
-1. 暗号化（安全なアルゴリズムと鍵管理）
-2. 入力検証（SQLインジェクション、XSS対策）
-3. 認証（MFA とセキュアなセッション管理）
-4. 認可（アクセス制御と IDOR 防止）
-5. サプライチェーン（依存性セキュリティ）
-6. クラウドセキュリティ（IaC と Kubernetes 対策）
-7. プラットフォームセキュリティ（モバイルと API セキュリティ）
-8. データ保護（暗号化とセキュアストレージ）
-
-詳細は `ai-docs/security/codeguard-rules/README.md` を参照してください。
-
-### 4. シークレットの確認
-
-GitHubリポジトリの **Settings → Secrets and variables → Actions** で以下が設定されていることを確認：
-
-| シークレット名 | 説明 |
-|---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code GitHub App認証トークン（自動設定済み） |
-
-### 5. テストコマンドの設定
-
-`.github/workflows/pr-review.yml` を開き、各パッケージに応じてテストコマンドをカスタマイズ：
-
-#### フロントエンド（Node.js）の場合
-
-```yaml
-- name: テスト環境のセットアップ (frontend)
-  if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
-  working-directory: packages/frontend
-  run: npm install
-
-- name: テスト実行 (frontend)
-  if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
-  working-directory: packages/frontend
-  run: npm test
-```
-
-#### バックエンド（Python）の場合
-
-```yaml
-- name: テスト環境のセットアップ (backend)
-  if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
-  working-directory: packages/backend
-  run: pip install -r requirements.txt
-
-- name: テスト実行 (backend)
-  if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
-  working-directory: packages/backend
-  run: pytest
-```
-
-### 6. 動作確認
-
-1. テスト用のissueを作成
-2. `tdd-implement:frontend` または `tdd-implement:backend` ラベルを付与
-3. GitHub Actionsタブでワークフローが実行されることを確認
-4. 対象パッケージが正しく判別されているかログで確認
 
 ## 開発手順
 
