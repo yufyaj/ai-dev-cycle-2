@@ -112,6 +112,67 @@ Claude Codeが要件定義書を作成しますので、内容を確認します
 - Sub-issue作成時は `frontend` または `backend` のみ付与
 - 実装開始時に手動で `tdd-implement:frontend` または `tdd-implement:backend` に変更
 
+##### Claude Codeでの作成方法
+
+**推奨プロンプト:**
+
+```
+以下の要件定義書を読んで、親IssueとSub-Issueを作成してください。
+
+【要件定義書】
+{ファイルパスまたは内容}
+
+【準拠事項】
+ai-docs/requirements/_guides/issue-creation-guide.md に従ってください
+
+【重要】
+Sub-issue作成時は `frontend` または `backend` ラベルのみを付与し、
+`tdd-implement:*` ラベルは付与しないでください。
+（実装開始時に人が手動で変更します）
+
+【手順】
+1. 要件定義書を分析
+2. 親Issueを作成（gh issue create）
+3. 機能をfrontend/backend別のSub-Issueに分割
+4. gh-sub-issueで各Sub-Issueを作成（ラベルは frontend または backend のみ）
+5. 実装順序を推奨
+
+作成したIssueのURL一覧を報告してください。
+```
+
+**実装例:**
+
+```bash
+# 1. 親Issue作成
+PARENT_ID=$(gh issue create \
+  --title "[Epic] ユーザー認証機能" \
+  --body "$(cat parent-issue-body.md)" \
+  --label "epic,enhancement" \
+  --json number --jq .number)
+
+echo "親Issue作成完了: #${PARENT_ID}"
+
+# 2. Sub-Issue作成（gh-sub-issue使用）
+# 注意: ラベルは frontend または backend のみ
+gh sub-issue create ${PARENT_ID} \
+  --title "[backend] JWTトークン生成機能の実装" \
+  --body "$(cat sub-issue-1-body.md)" \
+  --label "backend,priority:high,complexity:medium"
+
+gh sub-issue create ${PARENT_ID} \
+  --title "[backend] ログインAPIエンドポイントの実装" \
+  --body "$(cat sub-issue-2-body.md)" \
+  --label "backend,priority:high,complexity:low"
+
+gh sub-issue create ${PARENT_ID} \
+  --title "[frontend] ログインフォームの実装" \
+  --body "$(cat sub-issue-3-body.md)" \
+  --label "frontend,priority:medium,complexity:low"
+
+echo "Sub-Issue作成完了"
+echo "実装開始時は、ラベルを tdd-implement:frontend または tdd-implement:backend に変更してください"
+```
+
 #### Step 5: 実装開始
 
 Sub-issueの準備ができたら、ラベルを変更して実装を開始します。
@@ -300,7 +361,37 @@ chmod +x setup-labels.sh
 | `complexity:medium` | 複雑度：中 | しない | 淡黄 |
 | `complexity:high` | 複雑度：高 | しない | 淡赤 |
 
-### 3. シークレットの確認
+### 3. セキュリティルールのダウンロード
+
+project-codeguard/rules から最新のセキュリティルールをダウンロードします：
+
+```bash
+# 最新リリースを確認
+curl -s https://api.github.com/repos/project-codeguard/rules/releases/latest | grep "tag_name"
+
+# Claude Code用のルールをダウンロード（v1.0.0の例）
+cd ai-docs/security/codeguard-rules/
+
+curl -L -o claude-code-rules.md \
+  https://github.com/project-codeguard/rules/releases/download/v1.0.0/claude-code-rules.md
+
+# 配置を確認
+ls -la claude-code-rules.md
+```
+
+**CodeGuardは8つのセキュリティドメインをカバーしています:**
+1. 暗号化（安全なアルゴリズムと鍵管理）
+2. 入力検証（SQLインジェクション、XSS対策）
+3. 認証（MFA とセキュアなセッション管理）
+4. 認可（アクセス制御と IDOR 防止）
+5. サプライチェーン（依存性セキュリティ）
+6. クラウドセキュリティ（IaC と Kubernetes 対策）
+7. プラットフォームセキュリティ（モバイルと API セキュリティ）
+8. データ保護（暗号化とセキュアストレージ）
+
+詳細は `ai-docs/security/codeguard-rules/README.md` を参照してください。
+
+### 4. シークレットの確認
 
 GitHubリポジトリの **Settings → Secrets and variables → Actions** で以下が設定されていることを確認：
 
@@ -308,7 +399,7 @@ GitHubリポジトリの **Settings → Secrets and variables → Actions** で�
 |---|---|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code GitHub App認証トークン（自動設定済み） |
 
-### 4. テストコマンドの設定
+### 5. テストコマンドの設定
 
 `.github/workflows/pr-review.yml` を開き、各パッケージに応じてテストコマンドをカスタマイズ：
 
@@ -340,7 +431,7 @@ GitHubリポジトリの **Settings → Secrets and variables → Actions** で�
   run: pytest
 ```
 
-### 5. 動作確認
+### 6. 動作確認
 
 1. テスト用のissueを作成
 2. `tdd-implement:frontend` または `tdd-implement:backend` ラベルを付与
@@ -483,10 +574,15 @@ Claude Codeが自動的に以下の手順で実装を行います：
 
 **レビュー観点:**
 
-1. **セキュリティチェック**
-   - SQLインジェクション、XSSなどの脆弱性
-   - 機密情報のハードコーディング
+1. **セキュリティチェック（CodeGuardルール準拠）**
+   - SQLインジェクション、XSS、CSRFなどの脆弱性
+   - 機密情報のハードコーディング（パスワード、APIキー等）
+   - 安全でない暗号化アルゴリズムの使用
    - 認証・認可の不備
+   - 入力検証の欠如
+   - 依存関係のセキュリティ問題
+
+   詳細は `ai-docs/security/codeguard-rules/` を参照
 
 2. **コード品質**
    - CLAUDE.mdの規約準拠
@@ -693,6 +789,7 @@ claude /install-github-app
 - [Claude Code公式ドキュメント](https://docs.claude.com/en/docs/claude-code/github-actions)
 - [Claude Code Action GitHub](https://github.com/anthropics/claude-code-action)
 - [TDD（Test-Driven Development）について](https://ja.wikipedia.org/wiki/テスト駆動開発)
+- [project-codeguard/rules](https://github.com/project-codeguard/rules) - AI向けセキュリティルール
 
 ## ライセンス
 
