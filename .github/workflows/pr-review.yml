@@ -1,5 +1,6 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 name: PR自動テスト・レビュー
 
 on:
@@ -544,3 +545,187 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 >>>>>>> 8f18bbc (🔧 fix(workflows): PRレビューにcheckoutとclaude_argsを追加)
+=======
+name: PR自動テスト・レビュー
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  id-token: write
+
+jobs:
+  auto-test:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == true
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: 対象パッケージを判別
+        id: detect-package
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "ブランチ名: ${BRANCH_NAME}"
+
+          # ブランチ名から対象パッケージを抽出 (例: feature/frontend/issue-1 -> frontend)
+          if [[ $BRANCH_NAME == feature/frontend/* ]]; then
+            PACKAGE="frontend"
+          elif [[ $BRANCH_NAME == feature/backend/* ]]; then
+            PACKAGE="backend"
+          else
+            # パッケージ判別できない場合は全体をテスト
+            PACKAGE="all"
+          fi
+
+          echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
+          echo "対象パッケージ: ${PACKAGE}"
+
+      # プロジェクトに応じてテストコマンドをカスタマイズしてください
+      - name: テスト環境のセットアップ (frontend)
+        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        working-directory: packages/frontend
+        run: npm install
+
+      - name: テスト実行 (frontend)
+        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        working-directory: packages/frontend
+        run: npm test
+
+      - name: テスト環境のセットアップ (backend)
+        if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
+        working-directory: packages/backend
+        run: pip install -r requirements.txt
+
+      - name: テスト実行 (backend)
+        if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
+        working-directory: packages/backend
+        run: pytest
+
+  code-review:
+    runs-on: ubuntu-latest
+    needs: auto-test
+    if: github.event.pull_request.draft == true
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: 対象パッケージを判別
+        id: detect-package
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          if [[ $BRANCH_NAME == feature/frontend/* ]]; then
+            PACKAGE="frontend"
+          elif [[ $BRANCH_NAME == feature/backend/* ]]; then
+            PACKAGE="backend"
+          else
+            PACKAGE="all"
+          fi
+          echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
+
+      - name: Claude Codeによるレビュー
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--allowedTools Read,Glob,Grep,Bash"
+          prompt: |
+            ## タスク
+            このプルリクエスト (#${{ github.event.pull_request.number }}) のコードレビューを実施してください。
+
+            ## 📦 対象パッケージ
+            **${{ steps.detect-package.outputs.package }}** パッケージ
+
+            レビューは `packages/${{ steps.detect-package.outputs.package }}/` 配下の変更を中心に行ってください。
+
+            ## レビュー観点
+
+            ### 1. セキュリティチェック（CodeGuardルール準拠）
+            `ai-docs/security/codeguard-rules/` のセキュリティルールに基づいて、以下を確認してください：
+            - SQLインジェクション、XSS、CSRFなどの脆弱性
+            - 機密情報のハードコーディング（パスワード、APIキー、トークン等）
+            - 安全でない暗号化アルゴリズムの使用
+            - 認証・認可の不備
+            - 入力検証の欠如
+            - 依存関係のセキュリティ問題
+
+            ### 2. コード品質
+            - CLAUDE.mdの規約準拠
+            - 可読性と保守性
+            - パフォーマンスの問題
+            - エラーハンドリング
+
+            ### 3. テスト品質
+            - テストカバレッジの適切性
+            - エッジケースの考慮
+            - テストの可読性
+
+            ### 4. ベストプラクティス
+            - デザインパターンの適切な使用
+            - DRY原則の遵守
+            - SOLID原則の遵守
+
+            ## レビュー結果の形式
+
+            レビュー結果をPRコメントとして投稿してください：
+
+            ```
+            ## 🔍 コードレビュー結果
+
+            ### ✅ 良い点
+            - [良い点をリストアップ]
+
+            ### ⚠️ 改善提案
+            - [改善が必要な点をリストアップ]
+
+            ### 🚨 重大な問題
+            - [重大な問題があればリストアップ、なければ「なし」]
+
+            ### 📊 総合評価
+            - セキュリティ: [🟢安全 / 🟡要確認 / 🔴問題あり]
+            - コード品質: [🟢良好 / 🟡改善推奨 / 🔴要改善]
+            - テスト品質: [🟢十分 / 🟡追加推奨 / 🔴不十分]
+
+            ### 🎯 次のアクション
+            [問題なければ「ドラフト解除可能」、問題があれば「修正が必要」と具体的な指示]
+            ```
+
+            重大な問題がない場合は、レビュー後に自動的にドラフトを解除してください。
+
+  ready-for-review:
+    runs-on: ubuntu-latest
+    needs: code-review
+    if: github.event.pull_request.draft == true
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: ドラフト解除の準備確認
+        id: check-review
+        run: |
+          # Claude Codeのレビュー結果を確認
+          # 重大な問題がなければドラフト解除
+          echo "review_status=approved" >> $GITHUB_OUTPUT
+
+      - name: ドラフト解除
+        if: steps.check-review.outputs.review_status == 'approved'
+        run: |
+          gh pr ready ${{ github.event.pull_request.number }}
+          gh pr comment ${{ github.event.pull_request.number }} --body "✅ 自動レビューが完了しました！
+
+          - 🧪 テスト: 成功
+          - 👀 コードレビュー: 承認
+          - 🎉 ドラフトを解除しました
+
+          このPRはレビュー可能な状態です。最終確認をお願いします。
+
+          /cc @${{ github.event.pull_request.user.login }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+>>>>>>> 6fbea8a (🔧 fix(ci): PR自動レビューワークフローの修正)
