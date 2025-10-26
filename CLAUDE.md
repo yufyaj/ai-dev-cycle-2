@@ -175,11 +175,29 @@ PRコメントとして以下の形式で投稿：
 
 ### テスト
 
+#### 単体テスト（Unit Test）
 - テストは実装と同じファイル構造で配置
 - テスト名は `test_` で始める（Python）、`it('should...', ...)` 形式（JavaScript）
 - 1つのテストは1つの事を検証
 - Arrange-Act-Assert パターンを使用
 - エッジケースも必ずテスト
+
+#### E2Eテスト（End-to-End Test）
+- **配置**: `packages/frontend/e2e/` ディレクトリ
+- **ツール**: Playwright
+- **命名**: `*.spec.ts` 形式
+- **構造**: `test.describe()` でグループ化
+- **セレクター優先順位**:
+  1. `getByRole()` - アクセシビリティ重視（推奨）
+  2. `getByLabel()` - フォーム要素
+  3. `getByText()` - 表示テキスト
+  4. `getByTestId()` - 最終手段
+- **ベストプラクティス**:
+  - Page Object Modelパターンを使用（複雑なページの場合）
+  - `waitFor` は最小限に（Playwrightの自動待機を活用）
+  - 各テストは独立して実行可能にする
+  - `test.beforeEach()` で共通のセットアップ
+  - ユーザー視点でのシナリオをテスト
 
 ### エラーハンドリング
 

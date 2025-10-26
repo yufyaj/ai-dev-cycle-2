@@ -49,6 +49,16 @@ jobs:
         working-directory: packages/frontend
         run: npm test
 
+      - name: Playwrightブラウザのインストール (frontend)
+        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        working-directory: packages/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: E2Eテスト実行 (frontend)
+        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        working-directory: packages/frontend
+        run: npm run test:e2e
+
       - name: テスト環境のセットアップ (backend)
         if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
         working-directory: packages/backend
