@@ -1,0 +1,18 @@
+# すべてのテキストファイルの改行コードをLFに統一
+* text=auto eol=lf
+
+# Windowsバッチファイルは例外的にCRLFを維持
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# バイナリファイルは変換しない
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
