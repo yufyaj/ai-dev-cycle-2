@@ -35,20 +35,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          additional_permissions: "*"
+          claude_args: "--allowedTools Write,Edit,Bash,Read,Glob,Grep,TodoWrite"
           prompt: |
-            ## 承認済みツール
-            以下のツールは承認済みです。すべて自由に使用してください：
-            - Write: ファイルの作成・上書き
-            - Edit: ファイルの編集
-            - Bash: コマンド実行
-            - Read: ファイルの読み取り
-            - Glob: ファイル検索
-            - Grep: 内容検索
-            - TodoWrite: タスク管理
-
-            **重要**: ファイル作成やコマンド実行の承認を求めずに、直接実行してください。
-
             ## タスク
             Issue #${{ github.event.issue.number }} の内容を確認し、TDD（Test-Driven Development）で実装してください。
 
