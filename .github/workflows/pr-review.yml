@@ -41,34 +41,22 @@ jobs:
       - name: テスト環境のセットアップ (frontend)
         if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
         working-directory: packages/frontend
-        run: |
-          # 例: Node.jsプロジェクトの場合
-          # npm install
-          echo "frontendのテスト環境をセットアップしてください"
+        run: npm install
 
       - name: テスト実行 (frontend)
         if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
         working-directory: packages/frontend
-        run: |
-          # 例: Node.jsプロジェクトの場合
-          # npm test
-          echo "frontendのテストコマンドを設定してください"
+        run: npm test
 
       - name: テスト環境のセットアップ (backend)
         if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
         working-directory: packages/backend
-        run: |
-          # 例: Pythonプロジェクトの場合
-          # pip install -r requirements.txt
-          echo "backendのテスト環境をセットアップしてください"
+        run: pip install -r requirements.txt
 
       - name: テスト実行 (backend)
         if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
         working-directory: packages/backend
-        run: |
-          # 例: Pythonプロジェクトの場合
-          # pytest
-          echo "backendのテストコマンドを設定してください"
+        run: pytest
 
   code-review:
     runs-on: ubuntu-latest
