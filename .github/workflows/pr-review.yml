@@ -2,6 +2,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 name: PR自動テスト・レビュー
 
 on:
@@ -731,6 +732,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 >>>>>>> 6fbea8a (🔧 fix(ci): PR自動レビューワークフローの修正)
 =======
+=======
+>>>>>>> 4863b0b (🔧 fix: 既存ファイルの改行コードをLFに正規化)
 name: PR自動テスト・レビュー
 
 on:
@@ -923,4 +926,7 @@ jobs:
           /cc @${{ github.event.pull_request.user.login }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+<<<<<<< HEAD
 >>>>>>> 5d68c5b (✅ test(frontend): Playwright E2Eテスト統合)
+=======
+>>>>>>> 4863b0b (🔧 fix: 既存ファイルの改行コードをLFに正規化)
