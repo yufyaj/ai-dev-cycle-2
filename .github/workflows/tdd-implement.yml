@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
       - name: パッケージ名を抽出
         id: extract-package
         run: |
