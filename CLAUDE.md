@@ -79,6 +79,7 @@ ls -d ai-docs/requirements/[0-9]* 2>/dev/null | sort -r | head -1
 **参照ドキュメント:**
 - CLAUDE.md（このファイル）
 - Issue本文の実装内容と受け入れ基準
+- `ai-docs/security/codeguard-rules/` - セキュリティルール（実装時に必ず準拠）
 
 **TDDサイクル（厳守）:**
 1. **Red**: 失敗するテストを先に書く
@@ -105,8 +106,16 @@ ls -d ai-docs/requirements/[0-9]* 2>/dev/null | sort -r | head -1
 
 ドラフトPRに対するレビュー（GitHub Actionsから自動起動）。
 
+**参照ドキュメント:**
+- `ai-docs/security/codeguard-rules/` - セキュリティチェックリスト
+
 **レビュー観点:**
-1. セキュリティ（SQLインジェクション、XSS、機密情報のハードコーディング）
+1. **セキュリティ（CodeGuardルール準拠）**
+   - SQLインジェクション、XSS、CSRF対策
+   - 機密情報のハードコーディング（パスワード、APIキー、トークン等）
+   - 安全でない暗号化アルゴリズムの使用
+   - 認証・認可の不備
+   - 入力検証の欠如
 2. コード品質（可読性、保守性、パフォーマンス、エラーハンドリング）
 3. テスト品質（カバレッジ、エッジケース、可読性）
 4. ベストプラクティス（デザインパターン、DRY、SOLID原則）
@@ -181,11 +190,27 @@ PRコメントとして以下の形式で投稿：
 
 ### セキュリティ
 
+**基本要件:**
 - パスワードは必ずハッシュ化
 - SQLクエリはパラメータ化（SQLインジェクション対策）
 - ユーザー入力は必ずバリデーション
 - 機密情報は環境変数で管理（ハードコーディング厳禁）
 - HTTPS必須
+
+**セキュリティルール:**
+実装とレビューの際は、必ず以下のCodeGuardセキュリティルールに準拠してください：
+- `ai-docs/security/codeguard-rules/claude-code-rules.md`（ダウンロード後）
+- `ai-docs/security/codeguard-rules/README.md`（セットアップ手順）
+
+CodeGuardは8つの重要なセキュリティドメインをカバーしています：
+1. 暗号化（安全なアルゴリズムと鍵管理）
+2. 入力検証（SQLインジェクション、XSS対策）
+3. 認証（MFA とセキュアなセッション管理）
+4. 認可（アクセス制御と IDOR 防止）
+5. サプライチェーン（依存性セキュリティ）
+6. クラウドセキュリティ（IaC と Kubernetes 対策）
+7. プラットフォームセキュリティ（モバイルと API セキュリティ）
+8. データ保護（暗号化とセキュアストレージ）
 
 ## パッケージ別の追加規約
 
@@ -305,8 +330,10 @@ A: 🚨セクションに明記し、「修正が必要」と明示してくだ�
 - [TDD（Test-Driven Development）](https://ja.wikipedia.org/wiki/テスト駆動開発)
 - [GitHub Sub-issues](https://zenn.dev/tacoms/articles/ea427591f8dba2)
 - [gh-sub-issue](https://github.com/yahsan2/gh-sub-issue)
+- [project-codeguard/rules](https://github.com/project-codeguard/rules) - セキュリティルール
 
 ## 更新履歴
 
+- 2025-01-24: project-codeguard/rulesのセキュリティルール統合
 - 2025-01-24: Git運用ルール（gitmoji必須）を追加
 - 2025-01-24: 初版作成
