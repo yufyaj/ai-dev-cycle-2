@@ -53,8 +53,8 @@ jobs:
       - name: 対象パッケージを判別
         id: detect-package
         run: |
-          # PRのブランチ名から対象パッケージを判定
-          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+          # GitHub APIからPR情報を取得してブランチ名を特定
+          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
           echo "ブランチ名: ${BRANCH_NAME}"
 
           if [[ $BRANCH_NAME == feature/frontend/* ]]; then
@@ -67,6 +67,8 @@ jobs:
 
           echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
           echo "対象パッケージ: ${PACKAGE}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 最新のテスト失敗ログを取得
         id: get-test-logs
@@ -130,7 +132,13 @@ jobs:
 
       - name: 変更をプッシュ
         run: |
-          git push origin HEAD:refs/pull/${{ needs.check-pr-comment.outputs.pr_number }}/head
+          # Git設定
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # PRのブランチ名を取得してpush
+          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
+          git push origin HEAD:${BRANCH_NAME}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -165,7 +173,8 @@ jobs:
       - name: 対象パッケージを判別
         id: detect-package
         run: |
-          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+          # GitHub APIからPR情報を取得してブランチ名を特定
+          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
           echo "ブランチ名: ${BRANCH_NAME}"
 
           if [[ $BRANCH_NAME == feature/frontend/* ]]; then
@@ -178,6 +187,8 @@ jobs:
 
           echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
           echo "対象パッケージ: ${PACKAGE}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Claude Codeレビューコメントを取得
         id: get-review
@@ -242,7 +253,13 @@ jobs:
       - name: 変更をプッシュ
         if: steps.get-review.outputs.has_review == 'true'
         run: |
-          git push origin HEAD:refs/pull/${{ needs.check-pr-comment.outputs.pr_number }}/head
+          # Git設定
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # PRのブランチ名を取得してpush
+          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
+          git push origin HEAD:${BRANCH_NAME}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
