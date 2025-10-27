@@ -1,0 +1,338 @@
+name: 自動修正ワークフロー
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # PRコメントかどうかを判定
+  check-pr-comment:
+    runs-on: ubuntu-latest
+    if: github.event.issue.pull_request != null
+    outputs:
+      is_fix_tests: ${{ steps.check.outputs.is_fix_tests }}
+      is_apply_review: ${{ steps.check.outputs.is_apply_review }}
+      pr_number: ${{ github.event.issue.number }}
+    steps:
+      - name: コメント内容を確認
+        id: check
+        run: |
+          COMMENT_BODY="${{ github.event.comment.body }}"
+
+          if [[ "$COMMENT_BODY" == "/fix-tests"* ]]; then
+            echo "is_fix_tests=true" >> $GITHUB_OUTPUT
+            echo "is_apply_review=false" >> $GITHUB_OUTPUT
+          elif [[ "$COMMENT_BODY" == "/apply-review"* ]]; then
+            echo "is_fix_tests=false" >> $GITHUB_OUTPUT
+            echo "is_apply_review=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_fix_tests=false" >> $GITHUB_OUTPUT
+            echo "is_apply_review=false" >> $GITHUB_OUTPUT
+          fi
+
+  # /fix-tests コマンド: テスト失敗を修正
+  fix-tests:
+    runs-on: ubuntu-latest
+    needs: check-pr-comment
+    if: needs.check-pr-comment.outputs.is_fix_tests == 'true'
+
+    steps:
+      - name: PRブランチ情報を取得
+        id: comment-branch
+        uses: xt0rted/pull-request-comment-branch@v3
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: PRブランチをチェックアウト
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.comment-branch.outputs.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 対象パッケージを判別
+        id: detect-package
+        run: |
+          # 取得したブランチ名から対象パッケージを判定
+          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+          echo "ブランチ名: ${BRANCH_NAME}"
+
+          if [[ $BRANCH_NAME == feature/frontend/* ]]; then
+            PACKAGE="frontend"
+          elif [[ $BRANCH_NAME == feature/backend/* ]]; then
+            PACKAGE="backend"
+          else
+            PACKAGE="all"
+          fi
+
+          echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
+          echo "対象パッケージ: ${PACKAGE}"
+
+      - name: 最新のテスト失敗ログを取得
+        id: get-test-logs
+        run: |
+          # 直近のワークフロー実行からテスト失敗ログを取得
+          gh run list --workflow=pr-review.yml --json databaseId,conclusion,headBranch --limit 5 \
+            | jq -r '.[] | select(.headBranch=="'$(git rev-parse --abbrev-ref HEAD)'") | select(.conclusion=="failure") | .databaseId' \
+            | head -1 > run_id.txt
+
+          if [ -s run_id.txt ]; then
+            RUN_ID=$(cat run_id.txt)
+            echo "run_id=${RUN_ID}" >> $GITHUB_OUTPUT
+            echo "テスト失敗のRun ID: ${RUN_ID}"
+          else
+            echo "run_id=" >> $GITHUB_OUTPUT
+            echo "テスト失敗のログが見つかりませんでした"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Claude Codeでテスト失敗を修正
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--allowedTools Write,Edit,Bash,Read,Glob,Grep"
+          prompt: |
+            ## タスク
+            PR #${{ needs.check-pr-comment.outputs.pr_number }} のテスト失敗を修正してください。
+
+            ## 📦 対象パッケージ
+            **${{ steps.detect-package.outputs.package }}** パッケージ
+
+            ## 失敗したテストの情報
+            最新のテスト失敗ログを確認し、失敗原因を特定してください：
+            ${{ steps.get-test-logs.outputs.run_id != '' && format('Run ID: {0}', steps.get-test-logs.outputs.run_id) || 'ログが見つからないため、コードを分析してテストを実行し、失敗原因を特定してください' }}
+
+            ## 修正方針
+            1. **テスト失敗の原因を特定**
+               - テストコードの問題（不正確なアサーション、セレクター間違い等）
+               - 実装コードの問題（バグ、ロジックエラー等）
+               - 環境の問題（依存関係、設定等）
+
+            2. **適切な修正を実施**
+               - テストコードの問題 → テストを修正
+               - 実装コードの問題 → 実装を修正
+               - 両方に問題がある場合 → 両方修正
+
+            3. **修正内容をコミット**
+               - コミットメッセージ: `🔧 fix: テスト失敗を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})`
+               - 修正した内容を詳細に記載
+
+            ## 完了条件
+            - すべてのテストが通ること
+            - 修正内容が論理的に正しいこと
+            - CLAUDE.mdの規約に準拠していること
+
+            ## 重要な注意事項
+            - **絶対にpushしないでください**（ワークフローが自動でpushします）
+            - 修正内容は最小限に留める
+            - テストが通ることを確認してからコミット
+
+      - name: 変更をコミット・プッシュ
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 変更がある場合のみコミット・push
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "🔧 fix: テスト失敗を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
+
+            # GITHUB_TOKENを使ってremote URLを設定（認証問題を解決）
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+            # PRブランチにpush
+            BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+            git push origin HEAD:${BRANCH_NAME}
+
+            echo "✅ コミット・プッシュ完了"
+          else
+            echo "変更がないためコミットをスキップします"
+          fi
+
+      - name: 修正完了をPRにコメント
+        run: |
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "✅ **テスト失敗の自動修正が完了しました**
+
+          Claude Codeがテスト失敗を分析し、修正を適用しました。
+          最新のコミットを確認してください。
+
+          - 📝 修正内容: コミットログを確認
+          - 🔄 再テスト: 自動的に実行されます
+
+          /cc @${{ github.event.comment.user.login }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: PRテストを再実行
+        run: |
+          echo "PRテストワークフローをトリガーします"
+          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+          gh workflow run pr-review.yml --ref ${BRANCH_NAME}
+          echo "✅ ワークフロー実行をリクエストしました"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # /apply-review コマンド: レビューの重要な改善提案を適用
+  apply-review:
+    runs-on: ubuntu-latest
+    needs: check-pr-comment
+    if: needs.check-pr-comment.outputs.is_apply_review == 'true'
+
+    steps:
+      - name: PRブランチ情報を取得
+        id: comment-branch
+        uses: xt0rted/pull-request-comment-branch@v3
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: PRブランチをチェックアウト
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.comment-branch.outputs.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 対象パッケージを判別
+        id: detect-package
+        run: |
+          # 取得したブランチ名から対象パッケージを判定
+          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+          echo "ブランチ名: ${BRANCH_NAME}"
+
+          if [[ $BRANCH_NAME == feature/frontend/* ]]; then
+            PACKAGE="frontend"
+          elif [[ $BRANCH_NAME == feature/backend/* ]]; then
+            PACKAGE="backend"
+          else
+            PACKAGE="all"
+          fi
+
+          echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
+          echo "対象パッケージ: ${PACKAGE}"
+
+      - name: Claude Codeレビューコメントを取得
+        id: get-review
+        run: |
+          # Claudeのレビューコメントを取得
+          gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json comments \
+            | jq -r '.comments[] | select(.author.login=="claude" or .author.login=="github-actions[bot]") | select(.body | contains("🔍 コードレビュー結果")) | .body' \
+            | head -1 > review.txt
+
+          if [ -s review.txt ]; then
+            echo "has_review=true" >> $GITHUB_OUTPUT
+            echo "レビューコメントを取得しました"
+          else
+            echo "has_review=false" >> $GITHUB_OUTPUT
+            echo "レビューコメントが見つかりませんでした"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Claude Codeでレビュー指摘を修正
+        if: steps.get-review.outputs.has_review == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--allowedTools Write,Edit,Bash,Read,Glob,Grep"
+          prompt: |
+            ## タスク
+            PR #${{ needs.check-pr-comment.outputs.pr_number }} のコードレビュー指摘事項を修正してください。
+
+            ## 📦 対象パッケージ
+            **${{ steps.detect-package.outputs.package }}** パッケージ
+
+            ## レビュー結果
+            最新のClaude Codeレビューコメントを確認してください：
+            ```
+            $(cat review.txt)
+            ```
+
+            ## 修正対象
+            以下の項目のみを修正してください：
+            1. **🚨 重大な問題**: すべて修正必須
+            2. **⚠️ 改善提案**: 重要度の高いもののみ修正
+               - セキュリティに関わる提案
+               - パフォーマンスに大きく影響する提案
+               - バグにつながる可能性がある提案
+
+            ## 修正方針
+            - 軽微な提案（スタイリング、コメント追加等）は無視してOK
+            - 実装の本質を変える提案は慎重に判断
+            - 修正内容は最小限に留める
+            - CLAUDE.mdの規約に準拠
+
+            ## 完了条件
+            - 重大な問題がすべて解決していること
+            - テストが通ること
+            - 修正内容が論理的に正しいこと
+
+            ## 重要な注意事項
+            - **絶対にpushしないでください**（ワークフローが自動でpushします）
+            - 修正した内容をコミットメッセージに記載
+
+      - name: 変更をコミット・プッシュ
+        if: steps.get-review.outputs.has_review == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 変更がある場合のみコミット・push
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "♻️ refactor: レビュー指摘事項を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
+
+            # GITHUB_TOKENを使ってremote URLを設定（認証問題を解決）
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+            # PRブランチにpush
+            BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+            git push origin HEAD:${BRANCH_NAME}
+
+            echo "✅ コミット・プッシュ完了"
+          else
+            echo "変更がないためコミットをスキップします"
+          fi
+
+      - name: 修正完了をPRにコメント
+        if: steps.get-review.outputs.has_review == 'true'
+        run: |
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "✅ **レビュー指摘事項の自動修正が完了しました**
+
+          Claude Codeがレビューの重要な改善提案を適用しました。
+          最新のコミットを確認してください。
+
+          - 📝 修正内容: コミットログを確認
+          - 🔄 再テスト: 自動的に実行されます
+
+          /cc @${{ github.event.comment.user.login }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: PRテストを再実行
+        if: steps.get-review.outputs.has_review == 'true'
+        run: |
+          echo "PRテストワークフローをトリガーします"
+          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+          gh workflow run pr-review.yml --ref ${BRANCH_NAME}
+          echo "✅ ワークフロー実行をリクエストしました"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: レビューコメント未検出時の通知
+        if: steps.get-review.outputs.has_review == 'false'
+        run: |
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "⚠️ **レビューコメントが見つかりませんでした**
+
+          Claude Codeのレビューコメントが見つからないため、修正を実行できませんでした。
+          先にPR自動レビューワークフローを実行してください。
+
+          /cc @${{ github.event.comment.user.login }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
