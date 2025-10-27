@@ -43,18 +43,24 @@ jobs:
     if: needs.check-pr-comment.outputs.is_fix_tests == 'true'
 
     steps:
+      - name: PRブランチ情報を取得
+        id: comment-branch
+        uses: xt0rted/pull-request-comment-branch@v3
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: PRブランチをチェックアウト
         uses: actions/checkout@v4
         with:
-          ref: refs/pull/${{ needs.check-pr-comment.outputs.pr_number }}/head
+          ref: ${{ steps.comment-branch.outputs.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: 対象パッケージを判別
         id: detect-package
         run: |
-          # GitHub APIからPR情報を取得してブランチ名を特定
-          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
+          # 取得したブランチ名から対象パッケージを判定
+          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
           echo "ブランチ名: ${BRANCH_NAME}"
 
           if [[ $BRANCH_NAME == feature/frontend/* ]]; then
@@ -67,8 +73,6 @@ jobs:
 
           echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
           echo "対象パッケージ: ${PACKAGE}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 最新のテスト失敗ログを取得
         id: get-test-logs
@@ -130,17 +134,13 @@ jobs:
             - 修正内容は最小限に留める
             - テストが通ることを確認してからコミット
 
-      - name: 変更をプッシュ
-        run: |
-          # Git設定
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # PRのブランチ名を取得してpush
-          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
-          git push origin HEAD:${BRANCH_NAME}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 変更をコミット・プッシュ
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🔧 fix: テスト失敗を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
 
       - name: 修正完了をPRにコメント
         run: |
@@ -163,18 +163,24 @@ jobs:
     if: needs.check-pr-comment.outputs.is_apply_review == 'true'
 
     steps:
+      - name: PRブランチ情報を取得
+        id: comment-branch
+        uses: xt0rted/pull-request-comment-branch@v3
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: PRブランチをチェックアウト
         uses: actions/checkout@v4
         with:
-          ref: refs/pull/${{ needs.check-pr-comment.outputs.pr_number }}/head
+          ref: ${{ steps.comment-branch.outputs.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: 対象パッケージを判別
         id: detect-package
         run: |
-          # GitHub APIからPR情報を取得してブランチ名を特定
-          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
+          # 取得したブランチ名から対象パッケージを判定
+          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
           echo "ブランチ名: ${BRANCH_NAME}"
 
           if [[ $BRANCH_NAME == feature/frontend/* ]]; then
@@ -187,8 +193,6 @@ jobs:
 
           echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
           echo "対象パッケージ: ${PACKAGE}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Claude Codeレビューコメントを取得
         id: get-review
@@ -250,18 +254,14 @@ jobs:
             - **絶対にpushしないでください**（ワークフローが自動でpushします）
             - 修正した内容をコミットメッセージに記載
 
-      - name: 変更をプッシュ
+      - name: 変更をコミット・プッシュ
         if: steps.get-review.outputs.has_review == 'true'
-        run: |
-          # Git設定
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # PRのブランチ名を取得してpush
-          BRANCH_NAME=$(gh pr view ${{ needs.check-pr-comment.outputs.pr_number }} --json headRefName -q .headRefName)
-          git push origin HEAD:${BRANCH_NAME}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "♻️ refactor: レビュー指摘事項を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
 
       - name: 修正完了をPRにコメント
         if: steps.get-review.outputs.has_review == 'true'
