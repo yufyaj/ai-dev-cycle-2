@@ -210,16 +210,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: PRテストを再実行
-        if: steps.commit-changes.outputs.has_changes == 'true'
-        run: |
-          echo "PRテストワークフローをトリガーします"
-          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
-          gh workflow run pr-review.yml --ref ${BRANCH_NAME}
-          echo "✅ ワークフロー実行をリクエストしました"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # /apply-review コマンド: レビューの重要な改善提案を適用
   apply-review:
     runs-on: ubuntu-latest
@@ -392,16 +382,6 @@ jobs:
           /cc @${{ github.event.comment.user.login }}
           COMMENT_EOF
           )"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: PRテストを再実行
-        if: steps.get-review.outputs.has_review == 'true' && steps.commit-review-changes.outputs.has_changes == 'true'
-        run: |
-          echo "PRテストワークフローをトリガーします"
-          BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
-          gh workflow run pr-review.yml --ref ${BRANCH_NAME}
-          echo "✅ ワークフロー実行をリクエストしました"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
