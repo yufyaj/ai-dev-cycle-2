@@ -43,21 +43,18 @@ export default function Counter() {
         <button
           onClick={increment}
           style={styles.button}
-          aria-label="カウントを1増やす"
         >
           +1
         </button>
         <button
           onClick={decrement}
           style={styles.button}
-          aria-label="カウントを1減らす"
         >
           -1
         </button>
         <button
           onClick={reset}
           style={styles.resetButton}
-          aria-label="カウントをリセット"
         >
           リセット
         </button>

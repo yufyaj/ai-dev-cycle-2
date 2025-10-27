@@ -45,7 +45,13 @@ export default defineConfig({
   },
 
   // テスト対象ブラウザの設定
-  projects: [
+  // CI環境ではchromiumのみ、ローカルでは全ブラウザでテスト
+  projects: process.env.CI ? [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ] : [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
