@@ -1,0 +1,70 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.display {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #333;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.button:hover {
+  background-color: #f0f0f0;
+}
+
+.button:active {
+  background-color: #e0e0e0;
+}
+
+.incrementButton {
+  composes: button;
+  color: #0070f3;
+  border-color: #0070f3;
+}
+
+.incrementButton:hover {
+  background-color: #e6f2ff;
+}
+
+.decrementButton {
+  composes: button;
+  color: #f44336;
+  border-color: #f44336;
+}
+
+.decrementButton:hover {
+  background-color: #ffebee;
+}
+
+.resetButton {
+  composes: button;
+  color: #666;
+  border-color: #999;
+}
+
+.resetButton:hover {
+  background-color: #f5f5f5;
+}
