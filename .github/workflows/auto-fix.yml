@@ -135,12 +135,22 @@ jobs:
             - テストが通ることを確認してからコミット
 
       - name: 変更をコミット・プッシュ
+        id: commit-changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 変更がある場合のみコミット・push
-          if [[ -n $(git status -s) ]]; then
+          # 変更されたファイルを確認
+          CHANGED_FILES=$(git status --short)
+
+          if [[ -n "$CHANGED_FILES" ]]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+
+            # 変更されたファイルのリストを保存（heredoc構文）
+            echo 'changed_files<<EOF' >> $GITHUB_OUTPUT
+            echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+            echo 'EOF' >> $GITHUB_OUTPUT
+
             git add .
             git commit -m "🔧 fix: テスト失敗を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
 
@@ -153,24 +163,55 @@ jobs:
 
             echo "✅ コミット・プッシュ完了"
           else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "変更がないためコミットをスキップします"
           fi
 
       - name: 修正完了をPRにコメント
+        if: steps.commit-changes.outputs.has_changes == 'true'
         run: |
-          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "✅ **テスト失敗の自動修正が完了しました**
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "$(cat <<'COMMENT_EOF'
+          ✅ **テスト失敗の自動修正が完了しました**
 
           Claude Codeがテスト失敗を分析し、修正を適用しました。
-          最新のコミットを確認してください。
 
-          - 📝 修正内容: コミットログを確認
+          ## 📝 変更されたファイル
+          ```
+          ${{ steps.commit-changes.outputs.changed_files }}
+          ```
+
+          - 💾 最新のコミットを確認してください
           - 🔄 再テスト: 自動的に実行されます
 
-          /cc @${{ github.event.comment.user.login }}"
+          /cc @${{ github.event.comment.user.login }}
+          COMMENT_EOF
+          )"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 修正なしの通知をPRにコメント
+        if: steps.commit-changes.outputs.has_changes == 'false'
+        run: |
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "$(cat <<'COMMENT_EOF'
+          ⚠️ **自動修正を試みましたが、変更は不要でした**
+
+          Claude Codeがコードを分析しましたが、修正すべき箇所が見つかりませんでした。
+
+          考えられる理由:
+          - ✅ すでに修正済み
+          - 🔧 テスト失敗の原因が環境にある
+          - 👤 手動での対応が必要な問題
+
+          詳細は[ワークフローログ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})を確認してください。
+
+          /cc @${{ github.event.comment.user.login }}
+          COMMENT_EOF
+          )"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: PRテストを再実行
+        if: steps.commit-changes.outputs.has_changes == 'true'
         run: |
           echo "PRテストワークフローをトリガーします"
           BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
@@ -278,13 +319,23 @@ jobs:
             - 修正した内容をコミットメッセージに記載
 
       - name: 変更をコミット・プッシュ
+        id: commit-review-changes
         if: steps.get-review.outputs.has_review == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 変更がある場合のみコミット・push
-          if [[ -n $(git status -s) ]]; then
+          # 変更されたファイルを確認
+          CHANGED_FILES=$(git status --short)
+
+          if [[ -n "$CHANGED_FILES" ]]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+
+            # 変更されたファイルのリストを保存（heredoc構文）
+            echo 'changed_files<<EOF' >> $GITHUB_OUTPUT
+            echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+            echo 'EOF' >> $GITHUB_OUTPUT
+
             git add .
             git commit -m "♻️ refactor: レビュー指摘事項を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
 
@@ -297,26 +348,55 @@ jobs:
 
             echo "✅ コミット・プッシュ完了"
           else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "変更がないためコミットをスキップします"
           fi
 
       - name: 修正完了をPRにコメント
-        if: steps.get-review.outputs.has_review == 'true'
+        if: steps.get-review.outputs.has_review == 'true' && steps.commit-review-changes.outputs.has_changes == 'true'
         run: |
-          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "✅ **レビュー指摘事項の自動修正が完了しました**
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "$(cat <<'COMMENT_EOF'
+          ✅ **レビュー指摘事項の自動修正が完了しました**
 
           Claude Codeがレビューの重要な改善提案を適用しました。
-          最新のコミットを確認してください。
 
-          - 📝 修正内容: コミットログを確認
+          ## 📝 変更されたファイル
+          ```
+          ${{ steps.commit-review-changes.outputs.changed_files }}
+          ```
+
+          - 💾 最新のコミットを確認してください
           - 🔄 再テスト: 自動的に実行されます
 
-          /cc @${{ github.event.comment.user.login }}"
+          /cc @${{ github.event.comment.user.login }}
+          COMMENT_EOF
+          )"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 修正なしの通知をPRにコメント
+        if: steps.get-review.outputs.has_review == 'true' && steps.commit-review-changes.outputs.has_changes == 'false'
+        run: |
+          gh pr comment ${{ needs.check-pr-comment.outputs.pr_number }} --body "$(cat <<'COMMENT_EOF'
+          ⚠️ **自動修正を試みましたが、変更は不要でした**
+
+          Claude Codeがレビュー内容を分析しましたが、修正すべき箇所が見つかりませんでした。
+
+          考えられる理由:
+          - ✅ すでに修正済み
+          - 💡 レビュー指摘が軽微な提案のみ（スタイル等）
+          - 👤 手動での対応が必要な内容
+
+          詳細は[ワークフローログ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})を確認してください。
+
+          /cc @${{ github.event.comment.user.login }}
+          COMMENT_EOF
+          )"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: PRテストを再実行
-        if: steps.get-review.outputs.has_review == 'true'
+        if: steps.get-review.outputs.has_review == 'true' && steps.commit-review-changes.outputs.has_changes == 'true'
         run: |
           echo "PRテストワークフローをトリガーします"
           BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
