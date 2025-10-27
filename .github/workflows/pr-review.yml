@@ -739,6 +739,12 @@ name: PR自動テスト・レビュー
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR番号（オプション）'
+        required: false
+        type: number
 
 permissions:
   contents: read
