@@ -135,12 +135,26 @@ jobs:
             - テストが通ることを確認してからコミット
 
       - name: 変更をコミット・プッシュ
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🔧 fix: テスト失敗を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
-          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 変更がある場合のみコミット・push
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "🔧 fix: テスト失敗を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
+
+            # GITHUB_TOKENを使ってremote URLを設定（認証問題を解決）
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+            # PRブランチにpush
+            BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+            git push origin HEAD:${BRANCH_NAME}
+
+            echo "✅ コミット・プッシュ完了"
+          else
+            echo "変更がないためコミットをスキップします"
+          fi
 
       - name: 修正完了をPRにコメント
         run: |
@@ -256,12 +270,26 @@ jobs:
 
       - name: 変更をコミット・プッシュ
         if: steps.get-review.outputs.has_review == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "♻️ refactor: レビュー指摘事項を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
-          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 変更がある場合のみコミット・push
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "♻️ refactor: レビュー指摘事項を自動修正 (#${{ needs.check-pr-comment.outputs.pr_number }})"
+
+            # GITHUB_TOKENを使ってremote URLを設定（認証問題を解決）
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+            # PRブランチにpush
+            BRANCH_NAME="${{ steps.comment-branch.outputs.head_ref }}"
+            git push origin HEAD:${BRANCH_NAME}
+
+            echo "✅ コミット・プッシュ完了"
+          else
+            echo "変更がないためコミットをスキップします"
+          fi
 
       - name: 修正完了をPRにコメント
         if: steps.get-review.outputs.has_review == 'true'
