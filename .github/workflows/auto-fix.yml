@@ -23,17 +23,21 @@ jobs:
       - name: コメント内容を確認
         id: check
         run: |
-          COMMENT_BODY="${{ github.event.comment.body }}"
+          # コメントの最初の行だけを安全に取得
+          COMMENT_START=$(echo "${{ github.event.comment.body }}" | head -1)
 
-          if [[ "$COMMENT_BODY" == "/fix-tests"* ]]; then
+          if [[ "$COMMENT_START" == "/fix-tests"* ]]; then
             echo "is_fix_tests=true" >> $GITHUB_OUTPUT
             echo "is_apply_review=false" >> $GITHUB_OUTPUT
-          elif [[ "$COMMENT_BODY" == "/apply-review"* ]]; then
+            echo "✅ /fix-tests コマンドを検出しました"
+          elif [[ "$COMMENT_START" == "/apply-review"* ]]; then
             echo "is_fix_tests=false" >> $GITHUB_OUTPUT
             echo "is_apply_review=true" >> $GITHUB_OUTPUT
+            echo "✅ /apply-review コマンドを検出しました"
           else
             echo "is_fix_tests=false" >> $GITHUB_OUTPUT
             echo "is_apply_review=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ 自動修正コマンドではありません。スキップします。"
           fi
 
   # /fix-tests コマンド: テスト失敗を修正
