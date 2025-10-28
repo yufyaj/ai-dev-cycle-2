@@ -30,47 +30,62 @@ jobs:
           BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
           echo "ブランチ名: ${BRANCH_NAME}"
 
-          # ブランチ名から対象パッケージを抽出 (例: feature/frontend/issue-1 -> frontend)
-          if [[ $BRANCH_NAME == feature/frontend/* ]]; then
-            PACKAGE="frontend"
-          elif [[ $BRANCH_NAME == feature/backend/* ]]; then
-            PACKAGE="backend"
+          # Issue番号を抽出 (例: feature/frontend/issue-1 -> 1)
+          if [[ $BRANCH_NAME =~ issue-([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "Issue番号: ${ISSUE_NUMBER}"
+
+            # Issueのラベルを取得
+            LABELS=$(gh issue view ${ISSUE_NUMBER} --json labels --jq '.labels[].name' | tr '\n' ',' || echo "")
+            echo "Issueラベル: ${LABELS}"
+
+            # tdd-implementラベルから判別
+            if [[ $LABELS == *"tdd-implement:frontend"* ]]; then
+              PACKAGE="frontend"
+            elif [[ $LABELS == *"tdd-implement:backend"* ]]; then
+              PACKAGE="backend"
+            else
+              echo "⚠️ tdd-implementラベルが見つかりません。テストをスキップします。"
+              PACKAGE=""
+            fi
           else
-            # パッケージ判別できない場合は全体をテスト
-            PACKAGE="all"
+            echo "⚠️ Issue番号が抽出できませんでした。テストをスキップします。"
+            PACKAGE=""
           fi
 
           echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
           echo "対象パッケージ: ${PACKAGE}"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       # プロジェクトに応じてテストコマンドをカスタマイズしてください
       - name: テスト環境のセットアップ (frontend)
-        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        if: steps.detect-package.outputs.package == 'frontend'
         working-directory: packages/frontend
         run: npm install
 
       - name: テスト実行 (frontend)
-        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        if: steps.detect-package.outputs.package == 'frontend'
         working-directory: packages/frontend
         run: npm test
 
       - name: Playwrightブラウザのインストール (frontend)
-        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        if: steps.detect-package.outputs.package == 'frontend'
         working-directory: packages/frontend
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: E2Eテスト実行 (frontend)
-        if: steps.detect-package.outputs.package == 'frontend' || steps.detect-package.outputs.package == 'all'
+        if: steps.detect-package.outputs.package == 'frontend'
         working-directory: packages/frontend
         run: npm run test:e2e
 
       - name: テスト環境のセットアップ (backend)
-        if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
+        if: steps.detect-package.outputs.package == 'backend'
         working-directory: packages/backend
         run: pip install -r requirements.txt
 
       - name: テスト実行 (backend)
-        if: steps.detect-package.outputs.package == 'backend' || steps.detect-package.outputs.package == 'all'
+        if: steps.detect-package.outputs.package == 'backend'
         working-directory: packages/backend
         run: pytest
 
@@ -86,16 +101,38 @@ jobs:
         id: detect-package
         run: |
           BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-          if [[ $BRANCH_NAME == feature/frontend/* ]]; then
-            PACKAGE="frontend"
-          elif [[ $BRANCH_NAME == feature/backend/* ]]; then
-            PACKAGE="backend"
+          echo "ブランチ名: ${BRANCH_NAME}"
+
+          # Issue番号を抽出 (例: feature/frontend/issue-1 -> 1)
+          if [[ $BRANCH_NAME =~ issue-([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "Issue番号: ${ISSUE_NUMBER}"
+
+            # Issueのラベルを取得
+            LABELS=$(gh issue view ${ISSUE_NUMBER} --json labels --jq '.labels[].name' | tr '\n' ',' || echo "")
+            echo "Issueラベル: ${LABELS}"
+
+            # tdd-implementラベルから判別
+            if [[ $LABELS == *"tdd-implement:frontend"* ]]; then
+              PACKAGE="frontend"
+            elif [[ $LABELS == *"tdd-implement:backend"* ]]; then
+              PACKAGE="backend"
+            else
+              echo "⚠️ tdd-implementラベルが見つかりません。レビューをスキップします。"
+              PACKAGE=""
+            fi
           else
-            PACKAGE="all"
+            echo "⚠️ Issue番号が抽出できませんでした。レビューをスキップします。"
+            PACKAGE=""
           fi
+
           echo "package=${PACKAGE}" >> $GITHUB_OUTPUT
+          echo "対象パッケージ: ${PACKAGE}"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Claude Codeによるレビュー
+        if: steps.detect-package.outputs.package != ''
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
